@@ -12,12 +12,13 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 const dynmapBoilerplate string = "<meta name=\"description\" content=\"Minecraft Dynamic Map\" />"
 
 // in the form tiles/world/flat/-1_1/zzzzz_-32_32.jpg
-const imgworld string = "tiles/world_the_end/flat/"
+const imgworld string = "tiles/world/flat/"
 
 // Client to the server
 type Client struct {
@@ -52,6 +53,32 @@ func (cl *Client) DownloadMap(height int, width int, scale int, x int, y int) {
 			fmt.Printf("Done with %d images\n", i*height+j)
 		}
 	}
+}
+
+// DownloadMapAsync will download all the leaflets asynchronously
+func (cl *Client) DownloadMapAsync(height int, width int, scale int, x int, y int) {
+	var wg sync.WaitGroup
+	count := 0
+	for i := 0; i < height; i++ {
+		for j := 0; j < width; j++ {
+			coordname := strconv.Itoa((j-width/2+x)*32) + "_" + strconv.Itoa((i-height/2+y)*32) + ".jpg"
+			// 10 so ratelimit doesn't freakout
+			if count == 40 {
+				wg.Wait()
+				count = 0
+			}
+			wg.Add(1)
+			count++
+			go func(coordname string, i, j int) {
+				res, _ := http.Get(cl.URL + imgworld + "0_0" + "/zzzzz_" + coordname)
+				img, _ := ioutil.ReadAll(res.Body)
+				ioutil.WriteFile("./leaflets/"+coordname, img, 0644)
+				fmt.Printf("Done with %d images\n", i*height+j)
+				wg.Done()
+			}(coordname, i, j)
+		}
+	}
+	wg.Wait()
 }
 
 // CompositeLeaflets composites all the leaflets into one big image
